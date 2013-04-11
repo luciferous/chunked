@@ -17,24 +17,20 @@ import org.jboss.netty.util.HashedWheelTimer
 import org.jboss.netty.util.TimerTask
 import org.jboss.netty.util.Timeout
 
-class RepeatChunk(
-  messages: Broker[ChannelBuffer],
-  errors: Broker[Throwable],
-  bytes: Array[Byte]) extends TimerTask {
-  def run(to: Timeout) {
-    val buf = ChannelBuffers.wrappedBuffer(bytes)
-    messages.send(buf) andThen errors.send(EOF)
-    Main.timer.newTimeout(to.getTask(), 1, TimeUnit.SECONDS)
-  }
-}
-
 class SimpleStream extends Service[HttpRequest, StreamResponse] {
   def apply(request: HttpRequest) = Future {
     val messageBroker = new Broker[ChannelBuffer]
     val errors = new Broker[Throwable]
-    Main.timer.newTimeout(
-      new RepeatChunk(messageBroker, errors, Array(65.toByte)),
-      1, TimeUnit.SECONDS)
+    val buf = ChannelBuffers.wrappedBuffer(Array(65.toByte))
+
+    messageBroker.send(buf) andThen errors.send(EOF)
+
+    Main.timer.newTimeout(new TimerTask {
+      def run(to: Timeout) {
+        messageBroker.send(buf) andThen errors.send(EOF)
+      }
+    }, 1, TimeUnit.SECONDS)
+
     new StreamResponse {
       val httpResponse =
         new DefaultHttpResponse(request.getProtocolVersion, OK)
